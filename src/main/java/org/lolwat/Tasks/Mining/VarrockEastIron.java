@@ -104,10 +104,6 @@ public class VarrockEastIron implements WatTask {
                 return;
             }
 
-            //Logger.log("Current time: " + Instant.now().getEpochSecond());
-            //Logger.log("Last success: " + lastSuccessfulRock);
-            //Logger.log("Since last success: " + (Instant.now().getEpochSecond() - lastSuccessfulRock));
-
             List<Tile> currentlyUsing;
             if (!usingAlternateRocks) {
                 currentlyUsing = defaultRocks;
