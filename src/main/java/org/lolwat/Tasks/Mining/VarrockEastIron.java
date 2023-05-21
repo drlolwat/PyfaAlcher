@@ -41,7 +41,7 @@ public class VarrockEastIron implements WatTask {
 
     @Override
     public String getName() {
-        return "Varrock East Iron";
+        return "Varrock East: Iron";
     }
 
     public VarrockEastIron() {
@@ -80,6 +80,7 @@ public class VarrockEastIron implements WatTask {
 
         HashMap<String, Integer> alwaysSell = new HashMap<String, Integer>() {
             {
+                put("Iron ore", -1000);
                 put("Coal", -1);
                 put("Tin ore", -1);
                 put("Copper ore", -1);
@@ -168,6 +169,11 @@ public class VarrockEastIron implements WatTask {
                 } else {
                     currentlyUsing = alternateRocks;
                 }
+            }
+
+            if(!Map.isTileOnScreen(currentlyUsing.get(0))) {
+                Camera.rotateToTile(currentlyUsing.get(0));
+                Sleep.sleep(100, 300);
             }
 
             if (!gotRock || (lastSuccessfulRock <= 0 || (Instant.now().getEpochSecond() - lastSuccessfulRock) > 10) || (rock != null && GameObjects.getTopObjectOnTile(rock.getTile()).getModelColors() == null)) {
