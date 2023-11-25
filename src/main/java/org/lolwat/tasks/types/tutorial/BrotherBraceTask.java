@@ -1,0 +1,95 @@
+package org.lolwat.tasks.types.tutorial;
+
+import org.dreambot.api.methods.Calculations;
+import org.dreambot.api.methods.container.impl.bank.Bank;
+import org.dreambot.api.methods.dialogues.Dialogues;
+import org.dreambot.api.methods.hint.HintArrow;
+import org.dreambot.api.methods.hint.HintArrowType;
+import org.dreambot.api.methods.interactive.GameObjects;
+import org.dreambot.api.methods.map.Tile;
+import org.dreambot.api.methods.quest.book.Quest;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.utilities.Logger;
+import org.dreambot.api.utilities.Sleep;
+import org.dreambot.api.wrappers.interactive.GameObject;
+import org.lolwat.WatAIO;
+import org.lolwat.misc.utils.DialogueUtils;
+import org.lolwat.misc.utils.TutorialUtils;
+import org.lolwat.tasks.WatTask;
+import org.lolwat.tasks.types.misc.TraversalTask;
+
+import java.util.HashMap;
+
+public class BrotherBraceTask implements WatTask {
+    @Override
+    public String getName() {
+        return "Tutorial: Brother Brace";
+    }
+
+    @Override
+    public boolean canPerformTask() {
+        return true;
+    }
+
+    @Override
+    public void execute(WatAIO instance) {
+        if(Dialogues.canContinue()) {
+            Dialogues.continueDialogue();
+        }
+
+        if (TutorialUtils.needsOpenTab()) {
+            TutorialUtils.handleTab();
+        }
+
+        if(HintArrow.exists()) {
+            if(HintArrow.getType().equals(HintArrowType.NPC)) {
+                DialogueUtils.talkTo("Brother Brace");
+            } else {
+                GameObject obj = GameObjects.getTopObjectOnTile(HintArrow.getTile());
+                if(obj != null && obj.getName().equals("Door")) {
+                    if(obj.interact("Open")) {
+                        Sleep.sleep(150, 300);
+                        instance.currentTask = new MagicInstructorTask();
+                    }
+                }
+            }
+        } else {
+            instance.currentTask = new TraversalTask(new Tile(3124, 3107).getArea(3), this);
+        }
+    }
+
+    @Override
+    public boolean requiresLogin() {
+        return true;
+    }
+
+    @Override
+    public int loopTime() {
+        return Calculations.random(350, 450);
+    }
+
+    @Override
+    public void onExpGained(Skill skill, int amount, WatAIO instance) {
+
+    }
+
+    @Override
+    public Skill trainsSkill() {
+        return null;
+    }
+
+    @Override
+    public Integer avoidAfterLevel() {
+        return 101;
+    }
+
+    @Override
+    public Quest completesQuest() {
+        return null;
+    }
+
+    @Override
+    public HashMap<String, Integer> clothesRequired() {
+        return new HashMap<>();
+    }
+}

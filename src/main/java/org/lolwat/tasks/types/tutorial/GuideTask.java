@@ -7,12 +7,11 @@ import org.dreambot.api.methods.hint.HintArrowType;
 import org.dreambot.api.methods.quest.book.Quest;
 import org.dreambot.api.methods.skills.Skill;
 import org.lolwat.WatAIO;
+import org.lolwat.misc.utils.DialogueUtils;
 import org.lolwat.misc.utils.TutorialUtils;
 import org.lolwat.tasks.WatTask;
 
 import java.util.HashMap;
-
-import static org.lolwat.misc.utils.DialogueUtils.talkTo;
 
 public class GuideTask implements WatTask {
     @Override
@@ -37,9 +36,9 @@ public class GuideTask implements WatTask {
         }
 
         if (Dialogues.getOptions() == null) {
-            talkTo("Gielinor Guide");
+            DialogueUtils.talkTo("Gielinor Guide");
         } else {
-            Dialogues.clickOption("I am an experienced player.");
+            Dialogues.chooseOption("I am an experienced player.");
         }
     }
 
