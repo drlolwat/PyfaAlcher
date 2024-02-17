@@ -17,7 +17,7 @@ import java.util.Map;
 
 public class WebUtils {
     private static String WEBHOOK_URL = "https://discord.com/api/webhooks/1200348905464942632/NBhLz6QpboIIwWi59R8azyvBWYCjT7-xOfbvqOvLaDmBnt944nhqSajdEQnVABbHNWa6";
-    private static final String GPT_URL = "https://botbuddy.net/_api_/wat.php";
+    private static final String GPT_URL = "https://api.botbuddy.net/wat.php";
     private static Gson gson = new Gson();
 
     public static void postWebhook(String title, String message) {
