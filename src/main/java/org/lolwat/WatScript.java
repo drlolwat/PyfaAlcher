@@ -1,302 +1,345 @@
 package org.lolwat;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import com.google.gson.*;
 import org.dreambot.api.Client;
-import org.dreambot.api.input.Mouse;
-import org.dreambot.api.methods.Calculations;
-import org.dreambot.api.methods.input.Camera;
-import org.dreambot.api.methods.input.CameraMode;
-import org.dreambot.api.methods.tabs.Tab;
-import org.dreambot.api.methods.tabs.Tabs;
-import org.dreambot.api.methods.walking.impl.Walking;
-import org.dreambot.api.methods.walking.pathfinding.impl.web.WebFinder;
-import org.dreambot.api.methods.walking.web.node.impl.teleports.MagicTeleport;
+import org.dreambot.api.data.GameState;
+import org.dreambot.api.methods.grandexchange.LivePrices;
+import org.dreambot.api.methods.interactive.Players;
+import org.dreambot.api.methods.skills.Skill;
+import org.dreambot.api.methods.skills.Skills;
+import org.dreambot.api.methods.widget.Widgets;
 import org.dreambot.api.methods.world.Worlds;
-import org.dreambot.api.randoms.RandomEvent;
-import org.dreambot.api.script.AbstractScript;
 import org.dreambot.api.script.Category;
-import org.dreambot.api.script.ScriptManager;
 import org.dreambot.api.script.ScriptManifest;
 import org.dreambot.api.script.event.impl.ExperienceEvent;
-import org.dreambot.api.script.listener.AnimationListener;
-import org.dreambot.api.script.listener.ChatListener;
+import org.dreambot.api.script.frameworks.treebranch.Branch;
+import org.dreambot.api.script.frameworks.treebranch.Leaf;
+import org.dreambot.api.script.frameworks.treebranch.TreeScript;
 import org.dreambot.api.script.listener.ExperienceListener;
-import org.dreambot.api.script.listener.SpawnListener;
-import org.dreambot.api.utilities.AccountManager;
+import org.dreambot.api.script.listener.ItemContainerListener;
 import org.dreambot.api.utilities.Logger;
-import org.dreambot.api.utilities.Sleep;
-import org.dreambot.api.wrappers.interactive.NPC;
-import org.dreambot.api.wrappers.items.GroundItem;
-import org.dreambot.api.wrappers.widgets.Menu;
-import org.dreambot.api.wrappers.widgets.message.Message;
-import org.lolwat.managers.ConfigManager;
-import org.lolwat.managers.TaskManager;
-import org.lolwat.managers.TeleportManager;
-import org.lolwat.misc.mouse.HumanMouse;
-import org.lolwat.misc.utils.GenericUtils;
-import org.lolwat.tasks.misc.BondingTask;
-import org.lolwat.tasks.misc.HopperTask;
-import org.lolwat.tasks.misc.MulingTask;
-import org.lolwat.tasks.shamans.ShamanCombatTask;
+import org.dreambot.api.utilities.Timer;
+import org.dreambot.api.wrappers.items.Item;
+import org.dreambot.api.wrappers.widgets.WidgetChild;
+import org.lolwat.Muling.DoTradeWithMule;
+import org.lolwat.Muling.HopWorlds;
+import org.lolwat.Muling.Timeout;
+import org.lolwat.Muling.TradeMule;
+import org.lolwat.alching.AlchItem;
+import org.lolwat.alching.BuyItem;
+import org.lolwat.alching.StartMuling;
 
+import javax.swing.*;
 import java.awt.*;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
+import java.io.InputStream;
 import java.net.URL;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 
-@ScriptManifest(name = "WatScript1", description = "WatScript1", author = "lolwat", version = 0.1, category = Category.MISC)
-public class WatScript extends AbstractScript implements ExperienceListener, ChatListener, AnimationListener, SpawnListener {
-    private static WatScript instance;
-    public static WatScript getInstance() {
-        return instance;
+@ScriptManifest(
+        category = Category.MISC,
+        author = "Pyfa",
+        name = "Pyfa Alcher",
+        description = "Alchs items for a profit",
+        version = 0.2D
+)
+public class WatScript extends TreeScript implements ExperienceListener, ItemContainerListener {
+    private static final DecimalFormat df = new DecimalFormat("0.00");
+    public static long timeSinceEat = Instant.now().getEpochSecond();
+    public static JsonObject latestPrice = null;
+    public static int natureRunePrice = LivePrices.get("Nature rune");
+    public static int alchCount = 0;
+    public static boolean members = false;
+    public static JsonArray mapping = null;
+    public static Timer timer = new Timer();
+    public static Item itemToAlch = null;
+    public static HashMap<Integer, Integer> buyLimits = new HashMap<>();
+    public static HashMap<Integer, Integer> buyPrice = new HashMap<>();
+    public static HashMap<Integer, Integer> profitableItems = new HashMap<>();
+    public static HashMap<Integer, HashMap<Long, Integer>> purchases = new HashMap<>();
+    public static WatScript.State currentState;
+    public static String profileName;
+    public static Font font;
+    public static Color chatboxCoverColour;
+    public static Branch alchingBranch;
+    public static Branch buyingBranch;
+    public static Branch mulingBranch;
+    public static boolean launchedGUI;
+    public static int totalLootValue;
+    public static Long activityLastLogged;
+    private final RenderingHints aa;
+    private static final Gson gson = new Gson();
+
+    public WatScript() {
+        this.aa = new RenderingHints(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
     }
 
-    List<String> logoutMessages = Arrays.asList(
-            "You've been playing for a while, consider taking a break from your screen.",
-            "You will be logged out in approximately 30 minutes. Make sure you move to a safe area or log out now.",
-            "You will be logged out in approximately 10 minutes. Make sure you move to a safe area or log out now.",
-            "You will be logged out in approximately 5 minutes. Make sure you move to a safe area or log out now.");
+    public static void getLatestPrices() throws IOException {
+        latestPrice = getJson(new URL("https://prices.pyfa.dev/api/v1/prices/item_prices")).getAsJsonObject();
+    }
 
-    @Override
-    public void onStart(String... params) {
-        if (params.length > 0) {
-            doStart(params[0]);
+    public static void getMapping() throws IOException {
+        URLConnection connection = (new URL("https://cdn.pyfa.dev/mapping.json")).openConnection();
+        String userAgent = "Price trends";
+        connection.setRequestProperty("User-Agent", userAgent);
+        InputStream inputStream = connection.getInputStream();
+        String json = readFromInputStream(inputStream);
+        inputStream.close();
+
+        mapping = JsonParser.parseString(json).getAsJsonArray();
+        for (JsonElement element : mapping) {
+            JsonObject item = element.getAsJsonObject();
+            if (item.has("limit") && !item.get("limit").isJsonNull()) {
+                Integer itemID = item.get("id").getAsInt();
+                Integer buyLimit = item.get("limit").getAsInt();
+                buyLimits.put(itemID, buyLimit);
+            }
+        }
+    }
+
+    public static Item findProfitableItem() {
+        try {
+            getLatestPrices();
+        } catch (IOException var7) {
+            Logger.log("Failed to get latest prices");
+            return null;
+        }
+
+        profitableItems = new HashMap<>();
+        Item mostProfitableItem = null;
+        int profitFromItem = 0;
+        JsonObject data = latestPrice.getAsJsonObject("data");
+
+        for (String key : data.keySet()) {
+            JsonObject item = data.getAsJsonObject(key);
+            if (key != null && item.has("avgLowPrice") && !item.get("avgLowPrice").isJsonNull() &&
+                    item.has("avgHighPrice") && !item.get("avgHighPrice").isJsonNull() &&
+                    item.has("lowPriceVolume") && !item.get("lowPriceVolume").isJsonNull() &&
+                    item.has("highPriceVolume") && !item.get("highPriceVolume").isJsonNull()) {
+
+                Item runescapeItem = new Item(Integer.parseInt(key), 1);
+                Logger.log(runescapeItem.getName());
+                int highAlchProfit = runescapeItem.getHighAlchValue() - ((item.get("avgHighPrice").getAsInt() + item.get("avgLowPrice").getAsInt()) / 2 + natureRunePrice);
+
+                if ((item.get("highPriceVolume").getAsInt() + item.get("lowPriceVolume").getAsInt()) / 2 > 30 && highAlchProfit > ConfigManager.getInstance().getConfigInt("min_profit") &&
+                        (!runescapeItem.isMembersOnly() || (members && runescapeItem.isMembersOnly()))) {
+
+                    if (howManyCanIBuy(runescapeItem) > 0) {
+                        if (mostProfitableItem == null) {
+                            mostProfitableItem = runescapeItem;
+                            profitFromItem = highAlchProfit;
+                        }
+
+                        if (highAlchProfit > profitFromItem) {
+                            profitFromItem = highAlchProfit;
+                            mostProfitableItem = runescapeItem;
+                        }
+
+                        Logger.log(runescapeItem.getName() + " - " + highAlchProfit + " - Number I can buy: " + howManyCanIBuy(runescapeItem));
+                        profitableItems.put(runescapeItem.getID(), highAlchProfit);
+                    }
+                }
+            }
+        }
+        return mostProfitableItem;
+    }
+
+    public static int madePurchase(Item item, int amount, long purchaseTime) {
+        if (!purchases.containsKey(item.getID())) {
+            purchases.put(item.getID(), new HashMap<>());
+        }
+
+        purchases.get(item.getID()).put(purchaseTime, amount);
+        return 0;
+    }
+
+    public static int howManyCanIBuy(Item item) {
+        long currentTime = Instant.now().getEpochSecond();
+        if (!purchases.containsKey(item.getID())) {
+            return buyLimits.get(item.getID());
         } else {
-            doStart("default");
+            int amountBoughtInLimit = 0;
+            for (Long timestamp : purchases.get(item.getID()).keySet()) {
+                if (timestamp > currentTime - 14400L) {
+                    amountBoughtInLimit += purchases.get(item.getID()).get(timestamp);
+                }
+            }
+            return buyLimits.get(item.getID()) - amountBoughtInLimit;
         }
     }
 
-    private static String getScriptName() {
-        return "WatScript1";
+    public static JsonObject getJson(URL url) throws IOException {
+        URLConnection connection = url.openConnection();
+        String userAgent = "Price trends";
+        connection.setRequestProperty("User-Agent", userAgent);
+        InputStream inputStream = connection.getInputStream();
+        String json = readFromInputStream(inputStream);
+        inputStream.close();
+        return JsonParser.parseString(json).getAsJsonObject();
     }
 
-    @Override
-    public void onStart() {
-        doStart("default");
-    }
-
-    private void doStart(String profile) {
-        if (instance == null) {
-            Logger.log(Color.green, "WatShamans starting: assigning instance");
-            instance = this;
+    private static String readFromInputStream(InputStream inputStream) throws IOException {
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        byte[] buffer = new byte[1024];
+        int length;
+        while ((length = inputStream.read(buffer)) != -1) {
+            result.write(buffer, 0, length);
         }
+        return result.toString(StandardCharsets.UTF_8.name());
+    }
+
+    public void onInventoryItemChanged(Item incoming, Item existing) {
+    }
+
+    public void onStart(String... args) {
+        profileName = args[0];
 
         if (ConfigManager.getInstance() == null) {
             Logger.log("Constructing ConfigManager singleton.");
             ConfigManager.setInstance(new ConfigManager());
-            ConfigManager.getInstance().setNetWorth(0);
-            ConfigManager.getInstance().setNetWorthGeneratedAt(0);
-            ConfigManager.getInstance().loadFromProfile(profile);
+            ConfigManager.getInstance().loadFromProfile(profileName);
         }
-
-        if (TeleportManager.getInstance() == null) {
-            Logger.log("Constructing TeleportManager singleton.");
-            TeleportManager.setInstance(new TeleportManager());
-        }
-
-        Walking.setMinimapTargetSize(15);
-        Camera.setCameraMode(CameraMode.MOUSE_ONLY);
-        HumanMouse m = new HumanMouse();
-        Mouse.setMouseAlgorithm(m);
-
-        if (TaskManager.getInstance() == null) {
-            Logger.log("Constructing TaskManager singleton.");
-            TaskManager.setInstance(new TaskManager());
-        }
-
-        getRandomManager().disableSolver(RandomEvent.DISMISS);
-        if (!Menu.isMenuManipulationActive()) {
-            Logger.log("Enabling menu manipulation and noclick walk");
-            Menu.toggleMenuManipulation(true);
-            Walking.toggleNoClickWalk(true);
-        }
-
-        WebFinder.getWebFinder().disableEquipmentTeleports();
-        WebFinder.getWebFinder().disableEquippingTeleports();
-        WebFinder.getWebFinder().disableInventoryTeleports();
-        WebFinder.getWebFinder().disableTeleport(MagicTeleport.LUMBRIDGE_HOME_TELEPORT);
     }
 
-    public void sendWebhook(String message, boolean error) {
-        String webhookUrl = "https://api.botbuddy.net/ws_discord.php";
-        try {
-            int responseCode = getResponseCode(message, webhookUrl, error);
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                Logger.log("webhook failed: " + responseCode);
+    public void onStart() {
+        profileName = "";
+
+        if (ConfigManager.getInstance() == null) {
+            Logger.log("Constructing ConfigManager singleton.");
+            ConfigManager.setInstance(new ConfigManager());
+            ConfigManager.getInstance().loadFromProfile("default");
+        }
+    }
+
+    public void onExit() {
+        if (Settings.getSettingsGUI() != null) {
+            Settings.getSettingsGUI().dispose();
+        }
+    }
+
+    public void onPaint(Graphics g) {
+        Graphics2D gg;
+        if (!launchedGUI && Client.getGameState().equals(GameState.LOGGED_IN) && Players.getLocal() != null && Skills.getTotalLevel() > 0) {
+            launchedGUI = true;
+            new MuleUtil();
+            gg = (Graphics2D)Client.getCanvas().getGraphics();
+            Font original = gg.getFont();
+            Font bigger = original.deriveFont(16.0F);
+            bigger = bigger.deriveFont(1);
+            font = bigger;
+            timer.start();
+            if (profileName.equals("")) {
+                new Settings();
+            } else {
+                new Settings(profileName);
             }
-        } catch (Exception e) {
-            Logger.log("webhook: " + e.getMessage());
-        }
-    }
 
-    private static int getResponseCode(String message, String webhookUrl, boolean error) throws IOException {
-        URL url = new URL(webhookUrl);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setDoOutput(true);
+            SwingUtilities.invokeLater(Settings::createGUI);
 
-        JsonObject embed = new JsonObject();
-        embed.addProperty("title", "Notification");
-        embed.addProperty("description", message);
-        embed.addProperty("color", error ? 16711680 : 3447003);
+            try {
+                getMapping();
+            } catch (IOException var11) {
+                Logger.log("Failed to get mapping");
+                return;
+            }
 
-        JsonObject payload = new JsonObject();
-        payload.add("embeds", new Gson().toJsonTree(new JsonObject[]{embed}));
-
-        String jsonPayload = new Gson().toJson(payload);
-
-        try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = jsonPayload.getBytes(StandardCharsets.UTF_8);
-            os.write(input, 0, input.length);
-        }
-
-        return connection.getResponseCode();
-    }
-
-    @Override
-    public int onLoop() {
-        if (!Client.isLoggedIn()) {
-            if (TaskManager.getInstance().getCurrentTask() == null) {
-                TaskManager.getInstance().setCurrentTask(null);
-                Logger.log("Enabling login manager");
-                enableLoginManager();
-                return 3000;
+            alchingBranch.addLeaves(new Leaf[]{new StartMuling(), new BuyItem(), new AlchItem()});
+            mulingBranch.addLeaves(new Leaf[]{new Timeout(), new HopWorlds(), new TradeMule(), new DoTradeWithMule()});
+            this.addBranches(new Branch[]{mulingBranch, alchingBranch});
+            itemToAlch = new Item(1127, 1);
+            currentState = WatScript.State.ALCHING;
+            if (Worlds.getCurrent().isMembers()) {
+                members = true;
             }
         }
 
-        if (ConfigManager.getInstance().isFirstStart()) {
-            ConfigManager.getInstance().setFirstStart(false);
+        gg = (Graphics2D)g;
+        gg.setRenderingHints(this.aa);
+        gg.setFont(font);
+        WidgetChild nameWidget = Widgets.getChildWidget(162, 55);
+        if (nameWidget != null) {
+            gg.setColor(Color.BLACK);
+            gg.fillRect(nameWidget.getX(), nameWidget.getY(), nameWidget.getWidth(), nameWidget.getHeight());
         }
 
-        if(!(TaskManager.getInstance().getCurrentTask() instanceof HopperTask)
-                && !(TaskManager.getInstance().getCurrentTask() instanceof BondingTask)
-                && !(TaskManager.getInstance().getCurrentTask() instanceof MulingTask)) {
-            if (GenericUtils.isMember() && !Worlds.getCurrent().isMembers()) {
-                TaskManager.getInstance().setCurrentTask(new HopperTask(0,
-                        (TaskManager.getInstance().getCurrentTask() != null) ?
-                                TaskManager.getInstance().getCurrentTask() : null), 0);
+        WidgetChild chatWidget = Widgets.getChildWidget(162, 34);
+        if (chatWidget != null) {
+            long elapsedTime = timer.elapsed() / 1000L;
+            gg.setColor(chatboxCoverColour);
+            gg.fillRect(chatWidget.getX(), chatWidget.getY(), chatWidget.getWidth(), chatWidget.getHeight());
+            gg.setColor(Color.WHITE);
+            float hoursElapsed = (float)elapsedTime / 3600.0F;
+            gg.drawString("Alchs: " + alchCount, chatWidget.getX() + 20, chatWidget.getY() + 25);
+            gg.drawString("Alchs/h: " + (int)((float)alchCount / hoursElapsed), chatWidget.getX() + 150, chatWidget.getY() + 25);
+            gg.drawString("GP: " + String.format("%.2f", (float)totalLootValue / 1000000.0F) + "M", chatWidget.getX() + 20, chatWidget.getY() + 55);
+            gg.drawString("GP/h: " + String.format("%.2f", (float)totalLootValue / 1000000.0F / hoursElapsed) + "M", chatWidget.getX() + 150, chatWidget.getY() + 55);
+            int hours = (int)(elapsedTime / 3600L);
+            int minutes = (int)(elapsedTime % 3600L / 60L);
+            int seconds = (int)(elapsedTime % 60L);
+            gg.drawString(String.format("%02d:%02d:%02d", hours, minutes, seconds), chatWidget.getX() + 425, chatWidget.getY() + 25);
+        }
+    }
 
-                Logger.log("We are hopping into a P2P world");
-                return 300;
+    public void onLevelUp(ExperienceEvent event) {
+        this.sleep(5000L);
+        List<Integer> levels = Arrays.asList(60, 70, 80, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99);
+        if (Settings.getDiscordWebhookUrl() != null && Settings.getDiscordWebhookUrl().length() != 0 && event.getSkill().equals(Skill.MAGIC) && levels.contains(Skills.getRealLevel(event.getSkill()))) {
+            DiscordWebhook webhook = new DiscordWebhook(Settings.getDiscordWebhookUrl());
+            webhook.setUsername("Pyfa Alcher");
+            DiscordWebhook.EmbedObject embedObject = new DiscordWebhook.EmbedObject();
+            embedObject.setColor(Color.BLUE);
+            embedObject.setTitle("Magic Level");
+            embedObject.setDescription(String.valueOf(Skills.getRealLevel(event.getSkill())));
+            webhook.addEmbed(embedObject);
+
+            try {
+                webhook.execute();
+            } catch (IOException var6) {
+                throw new RuntimeException(var6);
             }
         }
+    }
 
-        if(!GenericUtils.isMember() && TaskManager.getInstance().getCurrentTask() instanceof ShamanCombatTask) {
-            Logger.log("need to bond");
-            TaskManager.getInstance().setCurrentTask(new BondingTask(
-                    (TaskManager.getInstance().getCurrentTask() != null) ?
-                            TaskManager.getInstance().getCurrentTask() : null
-            ));
-            return 300;
+    public void onGained(ExperienceEvent event) {
+        if (event.getSkill().equals(Skill.MAGIC)) {
+            ++alchCount;
         }
+    }
 
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            // things to do if the task is active
-            if (!(TaskManager.getInstance().getCurrentTask() instanceof HopperTask) && Tabs.isOpen(Tab.LOGOUT)) {
-                Tabs.open(Tab.INVENTORY);
+    static {
+        currentState = WatScript.State.BUYING;
+        profileName = "";
+        chatboxCoverColour = new Color(0, 0, 0, 200);
+        alchingBranch = new Branch() {
+            public boolean isValid() {
+                return WatScript.currentState.equals(WatScript.State.ALCHING);
             }
-        } else {
-            Logger.log("Task was null, finding a new one...");
-            TaskManager.getInstance().getNewTask();
-            return 1500;
-        }
-
-        if (!Walking.isRunEnabled() && Walking.getRunEnergy() >= Calculations.random(75, 100)) {
-            Walking.toggleRun();
-            Sleep.sleep(50, 120);
-        }
-
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            if (!Client.isLoggedIn() && TaskManager.getInstance().getCurrentTask().requiresLogin()) {
-                Logger.log("Waiting for login...");
-                return 1000;
+        };
+        buyingBranch = new Branch() {
+            public boolean isValid() {
+                return WatScript.currentState.equals(WatScript.State.BUYING);
             }
-
-            TaskManager.getInstance().getCurrentTask().execute();
-
-            return TaskManager.getInstance().getCurrentTask() != null ? (TaskManager.getInstance().getCurrentTask().loopTime() > 0 ?
-                    TaskManager.getInstance().getCurrentTask().loopTime() : 300) : 300;
-        }
-
-        return 100;
-    }
-
-    @Override
-    public void onGained(ExperienceEvent ev) {
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            TaskManager.getInstance().getCurrentTask().onExpGained(ev.getSkill(), ev.getChange(), this);
-        }
-    }
-
-    @Override
-    public void onMessage(Message m) {
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            if (m.getMessage().startsWith("Darts")) {
-                int[] data = GenericUtils.parseText(m.getMessage());
-                TaskManager.getInstance().getCurrentTask().data().put("darts", data[0]);
-                TaskManager.getInstance().getCurrentTask().data().put("scales", data[1]);
-                Logger.log("Darts: " + data[0] + ", Scales: " + data[1] + " sent to task");
+        };
+        mulingBranch = new Branch() {
+            public boolean isValid() {
+                return WatScript.currentState.equals(WatScript.State.MULING);
             }
-
-            TaskManager.getInstance().getCurrentTask().onMessage(m);
-        }
-
-        if (m.getMessage().equals("Oh dear, you are dead!")) {
-            sendWebhook(AccountManager.getAccountNickname() + " has fallen and cannot get up", true);
-            Logger.log("DEATH DETECTED: STOPPING SCRIPT");
-            ScriptManager.getScriptManager().stop();
-        }
-
-        if (logoutMessages.contains(m.getMessage()) && TaskManager.getInstance().getCurrentTask() instanceof ShamanCombatTask) {
-            TaskManager.getInstance().setCurrentTask
-                    (
-                            new HopperTask(0, TaskManager.getInstance().getCurrentTask() != null
-                                    ? TaskManager.getInstance().getCurrentTask()
-                                    : null
-                            )
-                    );
-        }
+        };
+        launchedGUI = false;
+        totalLootValue = 0;
+        activityLastLogged = 0L;
     }
 
-    @Override
-    public void onNpcAnimation(NPC npc, int animation, int animationDelay) {
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            TaskManager.getInstance().getCurrentTask().onNpcAnimation(npc, animation, animationDelay);
-        }
-    }
-
-    @Override
-    public void onNpcSpawn(NPC npc) {
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            TaskManager.getInstance().getCurrentTask().onNpcSpawn(npc);
-        }
-    }
-
-    @Override
-    public void onNpcDespawn(NPC npc) {
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            TaskManager.getInstance().getCurrentTask().onNpcDespawn(npc);
-        }
-    }
-
-    @Override
-    public void onGroundItemSpawn(GroundItem object) {
-        if (TaskManager.getInstance().getCurrentTask() != null) {
-            TaskManager.getInstance().getCurrentTask().onGroundItemSpawn(object);
-        }
-    }
-
-    public void disableLoginManager() {
-        getRandomManager().disableSolver(RandomEvent.LOGIN);
-    }
-
-    public void enableLoginManager() {
-        getRandomManager().enableSolver(RandomEvent.LOGIN);
+    public static enum State {
+        ALCHING,
+        MULING,
+        BUYING;
     }
 }
